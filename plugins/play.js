@@ -51,7 +51,7 @@ Pᴏᴡᴇʀᴇᴅ Bʏ Rᴀʙʙɪᴛ Xᴍᴅ Mɪɴɪ
       },
     };
 
-    // ✅ Send Now Playing message (এখানেই একবারই পাঠাবে)
+    // ✅ Send Now Playing message
     await message.send(opts);
 
     // 4️⃣ Call your API with YouTube link
