@@ -5,78 +5,128 @@ import { Module } from "../lib/plugins.js";
 Module({
   command: "play",
   package: "youtube",
-  description: "Play song from YouTube (API based)",
+  description: "Play song (Parallel Fastest API + Fail Safe)",
 })(async (message, match) => {
   try {
     if (!match) {
-      return message.send("❌ Song name dao\n\n.play love nwantiti");
+      return message.send("❌ Song name dao\n\n.play tomake chai");
     }
 
     await message.react("🔍");
 
-    // 1️⃣ YouTube search
-    const res = await yts(match);
-    if (!res.videos || res.videos.length === 0) {
-      return message.send("❌ Kono video paoa jay nai");
+    let infoSent = false;
+
+    // 📌 API 2 (INSTANT START - query ভিত্তিক)
+    const api2Promise = axios
+      .get(
+        `https://youtube.whatsappbot027-8f0.workers.dev/music?query=${encodeURIComponent(
+          match
+        )}`,
+        { timeout: 60000 }
+      )
+      .then((res) => {
+        const data = res.data;
+
+        if (data?.status === "success" && data?.url) {
+          // যদি info আগে না পাঠানো হয়
+          if (!infoSent) {
+            infoSent = true;
+            message.send({
+              image: { url: data.thumbnail },
+              caption: `🎵 *Now Playing*
+
+📌 ${data.title}
+⏱️ ${data.duration}
+
+⬇️ Downloading...`,
+            });
+          }
+
+          return {
+            url: data.url,
+            title: data.title,
+            thumbnail: data.thumbnail,
+          };
+        }
+
+        throw new Error("API2 invalid");
+      });
+
+    // 🔎 yt-search (parallel)
+    const searchPromise = yts(match);
+
+    // 📌 API 1 (yt-search শেষে)
+    const api1Promise = searchPromise.then(async (res) => {
+      if (!res.videos || res.videos.length === 0) {
+        throw new Error("No video found");
+      }
+
+      const video = res.videos[0];
+
+      // info send (duplicate prevent)
+      if (!infoSent) {
+        infoSent = true;
+        await message.send({
+          image: { url: video.thumbnail },
+          caption: `🎵 *Now Playing*
+
+📌 ${video.title}
+👤 ${video.author.name}
+⏱️ ${video.timestamp}
+
+⬇️ Downloading...`,
+        });
+      }
+
+      const { data } = await axios.get(
+        `https://api-aswin-sparky.koyeb.app/api/downloader/song?url=${encodeURIComponent(
+          video.url
+        )}`,
+        { timeout: 60000 }
+      );
+
+      if (data?.status && data?.data?.url) {
+        return {
+          url: data.data.url,
+          title: data.data.title || video.title,
+          thumbnail: video.thumbnail,
+        };
+      }
+
+      throw new Error("API1 invalid");
+    });
+
+    // ⚡ FASTEST RESPONSE SYSTEM
+    let result;
+    try {
+      result = await Promise.race([api2Promise, api1Promise]);
+    } catch {
+      // 🛟 fallback (যদি race fail করে)
+      const results = await Promise.allSettled([
+        api2Promise,
+        api1Promise,
+      ]);
+
+      const success = results.find((r) => r.status === "fulfilled");
+
+      if (!success) {
+        return message.send("❌ Sob API fail hoise, pore abar try koro");
+      }
+
+      result = success.value;
     }
 
-    const video = res.videos[0];
-
-    // 2️⃣ Caption (WITH Powered By)
-    const caption = `
-🎵 *Now Playing*
-
-Pᴏᴡᴇʀᴇᴅ Bʏ Rᴀʙʙɪᴛ Xᴍᴅ Mɪɴɪ
-
-📌 *Title:* ${video.title}
-👤 *Channel:* ${video.author.name}
-⏱️ *Duration:* ${video.timestamp}
-
-⬇️ *Downloading audio...*
-`.trim();
-
-    // 3️⃣ opts (YouTube thumbnail ব্যবহার হবে)
-    const opts = {
-      image: { url: video.thumbnail },
-      caption: caption,
-      mimetype: "image/jpeg",
-      contextInfo: {
-        forwardingScore: 999,
-        isForwarded: true,
-        forwardedNewsletterMessageInfo: {
-          newsletterJid: "120363404737630340@newsletter",
-          newsletterName: "𝐑ᴀʙʙɪᴛ Xᴍᴅ",
-          serverMessageId: 6,
-        },
-      },
-    };
-
-    // ✅ Send Now Playing message
-    await message.send(opts);
-
-    // 4️⃣ Call your API with YouTube link
-    const apiUrl =
-      "https://api-aswin-sparky.koyeb.app/api/downloader/song?search=" +
-      encodeURIComponent(video.url);
-
-    const { data } = await axios.get(apiUrl, { timeout: 30000 });
-
-    if (!data || !data.status || !data.data?.url) {
-      return message.send("❌ Audio download failed");
-    }
-
-    // 5️⃣ Send audio
+    // 🎧 AUDIO SEND
     await message.send({
-      audio: { url: data.data.url },
+      audio: { url: result.url },
       mimetype: "audio/mpeg",
-      fileName: `${data.data.title || video.title}.mp3`,
+      fileName: `${result.title}.mp3`,
       contextInfo: {
         externalAdReply: {
-          title: data.data.title || video.title,
+          title: result.title,
           body: "Powered By Rabbit Xmd Mini",
+          thumbnailUrl: result.thumbnail,
           mediaType: 2,
-          sourceUrl: video.url,
-          thumbnailUrl: video.thumbnail,
         },
       },
     });
@@ -84,7 +134,7 @@ Pᴏᴡᴇʀᴇᴅ Bʏ Rᴀʙʙɪᴛ Xᴍᴅ Mɪɴɪ
     await message.react("🎧");
 
   } catch (err) {
-    console.error("[PLAY ERROR]", err);
-    await message.send("⚠️ Play failed");
+    console.error("[PLAY FINAL ERROR]", err?.response?.data || err.message);
+    await message.send("⚠️ Play failed, abar try koro");
   }
 });
