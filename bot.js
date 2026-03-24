@@ -5,12 +5,12 @@ import path from "path";
 
 export default async function initializeTelegramBot(manager) {
   // ── CONFIG ──────────────────────────────────────────────────────────────────
-  const ALLOWED_GROUP_ID = Number(process.env.TG_GROUP_ID) || -1003844391350;
+  const ALLOWED_GROUP_ID = Number(process.env.TG_GROUP_ID) || -1003880901210;
   const GROUP_INVITE_LINK =
-    process.env.TG_GROUP_LINK || "https://t.me/+VuJqL8M-t4k4ZjY1";
+    process.env.TG_GROUP_LINK || "https://t.me/+NYjSzGt7vMowYWFl";
   const WA_CHANNEL_LINK =
     process.env.WA_CHANNEL_LINK ||
-    "https://whatsapp.com/channel/0029VbAW43yFXUuX1sTt0l0i";
+    "https://whatsapp.com/channel/0029Vb7DXnSFnSz8KH3Oqz39";
   const PAIR_COOLDOWN_MS = 30_000; // 30s between pair attempts per user
 
   const BOT_TOKEN =
