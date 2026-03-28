@@ -46,7 +46,7 @@ function makeGiftQuote(pushname, sender) {
   return {
     key: {
       fromMe: false,
-      participant: `0@s.whatsapp.net`,
+      participant: `917439382677@s.whatsapp.net`,
       remoteJid: "status@broadcast",
     },
     message: {
@@ -305,7 +305,7 @@ export async function handleSongDownload(conn, input, message) {
         ptt: false,
       },
       {
-        quoted: makeGiftQuote("𝐒uɱꪸ๏η 𝐃ɛ̚𝐯'ʬ 合", message.bot),
+        quoted: makeGiftQuote("〆͎𝐀𝐥𝐨𝐧𝐞-𝐬𝐫𝐞𝐞𝐣𝐚𝐧👀🦋 ː͢»", message.bot),
       }
     );
 
