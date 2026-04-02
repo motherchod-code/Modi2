@@ -1,35 +1,45 @@
 import { Module } from "../lib/plugins.js";
 import axios from "axios";
+import fs from "fs";
 
 Module({
   command: "cpost",
   aliases: ["cp"],
   fromMe: true,
-  description: "Channel post",
+  description: "Ultimate Channel Poster",
 })(async (message, match) => {
+
   try {
     if (!match) {
-      return message.send("Usage: .cpost <channel_link> <text/url/reply>");
+      return message.send(
+        "Usage:\n.cpost <channel_link> <text/url/reply>"
+      );
     }
 
     await message.react("⏳");
 
+    // =========================
+    // PARSE INPUT
+    // =========================
     const args = match.trim().split(" ");
     const link = args.shift();
     const input = args.join(" ").trim();
 
-    // Extract channel ID
-    const id = link.match(/channel\/([\w\d]+)/)?.[1];
-    if (!id) return message.send("❌ Invalid channel link");
+    // =========================
+    // GET CHANNEL JID
+    // =========================
+    const invite = link.match(/channel\/([\w\d]+)/)?.[1];
+    if (!invite) return message.send("❌ Invalid channel link");
 
-    // Get real JID
-    const meta = await message.client.newsletterMetadata("invite", id);
+    const meta = await message.client.newsletterMetadata("invite", invite);
     const jid = meta.id;
 
+    // =========================
+    // VARIABLES
+    // =========================
     let msg = null;
-
     const quoted = message.quoted || null;
-    const qType = quoted?.type || null;
+    const qType = quoted?.mtype || quoted?.type || null;
 
     const mediaTypes = [
       "imageMessage",
@@ -39,35 +49,41 @@ Module({
     ];
 
     // =========================
-    // REPLY MODE
+    // REPLY MODE (MEDIA)
     // =========================
     if (quoted && mediaTypes.includes(qType)) {
-      const buffer = await quoted.download();
+
+      let buffer;
+      try {
+        buffer = await message.client.downloadMediaMessage(quoted);
+      } catch (e) {
+        console.error(e);
+        return message.send("❌ Failed to download media");
+      }
 
       if (!buffer || buffer.length === 0) {
-        await message.react("❌");
-        return message.send("❌ _Failed to download media. Please try again._");
+        return message.send("❌ Empty media buffer");
       }
 
       if (qType === "imageMessage") {
         msg = {
           image: buffer,
-          caption: input || quoted.text || ""
-        };
-      }
-
-      else if (qType === "audioMessage") {
-        msg = {
-          audio: buffer,
-          mimetype: "audio/mpeg",
-          ptt: false
+          caption: input || quoted.caption || ""
         };
       }
 
       else if (qType === "videoMessage") {
         msg = {
           video: buffer,
-          caption: input || quoted.text || ""
+          caption: input || quoted.caption || ""
+        };
+      }
+
+      else if (qType === "audioMessage") {
+        msg = {
+          audio: buffer,
+          mimetype: quoted.mimetype || "audio/mpeg",
+          ptt: false
         };
       }
 
@@ -80,7 +96,9 @@ Module({
       }
     }
 
-    // TEXT reply
+    // =========================
+    // REPLY MODE (TEXT)
+    // =========================
     else if (quoted && quoted.text) {
       msg = {
         text: input || quoted.text
@@ -91,8 +109,10 @@ Module({
     // URL MODE
     // =========================
     if (!msg && input.includes("http")) {
+
       const url = input.match(/https?:\/\/\S+/)?.[0];
       if (url) {
+
         const caption = input.replace(url, "").trim();
 
         let buffer;
@@ -103,34 +123,35 @@ Module({
           });
           buffer = Buffer.from(res.data);
         } catch {
-          return message.send("❌ Failed to download from URL");
+          return message.send("❌ Failed to download URL");
         }
 
+        // Detect type by extension
         if (url.match(/\.(jpg|jpeg|png|webp)/i)) {
-          msg = { image: buffer, caption: caption || "" };
-        }
-
-        else if (url.match(/\.(mp3|wav|m4a|ogg)/i)) {
-          msg = { audio: buffer, mimetype: "audio/mpeg", ptt: false };
+          msg = { image: buffer, caption };
         }
 
         else if (url.match(/\.(mp4|mkv|mov)/i)) {
-          msg = { video: buffer, caption: caption || "" };
+          msg = { video: buffer, caption };
         }
 
-        // Extension না থাকলে Content-Type দিয়ে চেক
+        else if (url.match(/\.(mp3|wav|ogg|m4a)/i)) {
+          msg = { audio: buffer, mimetype: "audio/mpeg" };
+        }
+
         else {
-          const res2 = await axios.head(url, {
-            headers: { "User-Agent": "Mozilla/5.0" }
-          }).catch(() => null);
-          const ct = res2?.headers?.["content-type"] || "";
+          // fallback by content-type
+          const head = await axios.head(url).catch(() => null);
+          const ct = head?.headers?.["content-type"] || "";
 
           if (ct.startsWith("image")) {
-            msg = { image: buffer, caption: caption || "" };
-          } else if (ct.startsWith("audio")) {
-            msg = { audio: buffer, mimetype: "audio/mpeg", ptt: false };
-          } else if (ct.startsWith("video")) {
-            msg = { video: buffer, caption: caption || "" };
+            msg = { image: buffer, caption };
+          } 
+          else if (ct.startsWith("video")) {
+            msg = { video: buffer, caption };
+          } 
+          else if (ct.startsWith("audio")) {
+            msg = { audio: buffer, mimetype: "audio/mpeg" };
           }
         }
       }
@@ -145,20 +166,21 @@ Module({
     }
 
     // =========================
-    // SEND (with fallback)
+    // SEND TO CHANNEL 🚀
     // =========================
     try {
       await message.client.newsletterSendMessage(jid, msg);
-    } catch {
+    } catch (e) {
+      console.log("Newsletter failed, trying fallback...");
       await message.client.sendMessage(jid, msg);
     }
 
     await message.react("✅");
-    return message.send("✅ Channel post sent successfully");
+    return message.send("✅ Posted to channel successfully");
 
   } catch (err) {
     console.error("[CPOST ERROR]", err);
     await message.react("❌");
-    return message.send(`❌ Failed: ${err.message}`);
+    return message.send("❌ Error: " + err.message);
   }
 });
