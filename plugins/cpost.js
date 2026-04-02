@@ -32,30 +32,28 @@ Module({
     // REPLY MODE
     // =========================
     if (message.reply_message) {
-      const m = message.reply_message;
+      const quoted = message.reply_message;
 
-      let buffer;
+      const mimetype =
+        quoted.mimetype ||
+        quoted.message?.imageMessage?.mimetype ||
+        quoted.message?.audioMessage?.mimetype ||
+        quoted.message?.videoMessage?.mimetype ||
+        "";
 
-      try {
-        buffer = await message.client.downloadMediaMessage(m.message);
-      } catch {
-        try {
-          buffer = await m.download();
-        } catch {}
-      }
-
-      if (!buffer) return message.send("Media download failed");
+      // ✅ quoted.download() দিয়ে buffer নাও
+      const buffer = await quoted.download();
 
       // IMAGE
-      if (m.mimetype && m.mimetype.startsWith("image")) {
+      if (mimetype.startsWith("image") || quoted.message?.imageMessage) {
         msg = {
           image: buffer,
-          caption: input || ""
+          caption: input || quoted.text || ""
         };
       }
 
-      // AUDIO
-      else if (m.mimetype && m.mimetype.startsWith("audio")) {
+      // AUDIO / SONG
+      else if (mimetype.startsWith("audio") || quoted.message?.audioMessage) {
         msg = {
           audio: buffer,
           mimetype: "audio/mpeg",
@@ -63,12 +61,22 @@ Module({
         };
       }
 
-      // TEXT
-      else if (m.text) {
+      // VIDEO
+      else if (mimetype.startsWith("video") || quoted.message?.videoMessage) {
         msg = {
-          text: input || m.text
+          video: buffer,
+          caption: input || quoted.text || ""
         };
       }
+
+      // TEXT
+      else if (quoted.text) {
+        msg = {
+          text: input || quoted.text
+        };
+      }
+
+      if (!msg) return message.send("Unsupported message type in reply");
     }
 
     // =========================
@@ -79,27 +87,46 @@ Module({
       if (url) {
         const caption = input.replace(url, "").trim();
 
-        // Single fetch, reused for any media type
-        const res = await axios.get(url, {
-          responseType: "arraybuffer",
-          headers: { "User-Agent": "Mozilla/5.0" }
-        });
-        const buffer = res.data;
+        let buffer;
+        try {
+          const res = await axios.get(url, {
+            responseType: "arraybuffer",
+            headers: { "User-Agent": "Mozilla/5.0" }
+          });
+          buffer = Buffer.from(res.data);
+        } catch {
+          return message.send("Failed to download from URL");
+        }
 
         // IMAGE
         if (url.match(/\.(jpg|jpeg|png|webp)/i)) {
-          msg = {
-            image: buffer,
-            caption: caption || ""
-          };
+          msg = { image: buffer, caption: caption || "" };
         }
 
         // AUDIO
-        else if (url.match(/\.(mp3|wav|m4a)/i)) {
-          msg = {
-            audio: buffer,
-            mimetype: "audio/mpeg"
-          };
+        else if (url.match(/\.(mp3|wav|m4a|ogg)/i)) {
+          msg = { audio: buffer, mimetype: "audio/mpeg", ptt: false };
+        }
+
+        // VIDEO
+        else if (url.match(/\.(mp4|mkv|mov)/i)) {
+          msg = { video: buffer, caption: caption || "" };
+        }
+
+        // Extension না থাকলে Content-Type দিয়ে চেক
+        else {
+          const res2 = await axios.head(url, {
+            headers: { "User-Agent": "Mozilla/5.0" }
+          }).catch(() => null);
+          const ct = res2?.headers?.["content-type"] || "";
+
+          if (ct.startsWith("image")) {
+            msg = { image: buffer, caption: caption || "" };
+          } else if (ct.startsWith("audio")) {
+            msg = { audio: buffer, mimetype: "audio/mpeg", ptt: false };
+          } else if (ct.startsWith("video")) {
+            msg = { video: buffer, caption: caption || "" };
+          }
         }
       }
     }
@@ -108,6 +135,7 @@ Module({
     // TEXT FALLBACK
     // =========================
     if (!msg) {
+      if (!input) return message.send("No content to post");
       msg = { text: input };
     }
 
@@ -126,7 +154,6 @@ Module({
   } catch (err) {
     console.error("[CPOST ERROR]", err);
     await message.react("❌");
-    return message.send("Failed to send message");
+    return message.send(`Failed: ${err.message}`);
   }
 });
-
