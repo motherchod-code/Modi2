@@ -3,7 +3,7 @@ import yts from "yt-search";
 import { Module } from "../lib/plugins.js";
 
 Module({
-  command: "play",
+  command: "plays",
   package: "youtube",
   description: "Play song from YouTube (API based)",
 })(async (message, match) => {
